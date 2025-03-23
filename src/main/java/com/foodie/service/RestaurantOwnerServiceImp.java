@@ -174,6 +174,7 @@ public class RestaurantOwnerServiceImp implements RestaurantOwnerService {
         dto.setName(restaurant.getName());
         dto.setAddress(restaurant.getAddress());
         dto.setPhone(restaurant.getPhone());
+        dto.setDescription(restaurant.getDescription());
         dto.setEmail(restaurant.getEmail());
         dto.setInstagram(restaurant.getInstagram());
         dto.setTwitter(restaurant.getTwitter());
@@ -264,7 +265,10 @@ public class RestaurantOwnerServiceImp implements RestaurantOwnerService {
         dto.setAddress(restaurant.getAddress());
         dto.setPhone(restaurant.getPhone());
         dto.setStatus(restaurant.isOpen());
-
+        dto.setDescription(restaurant.getDescription());
+        dto.setEmail(restaurant.getEmail());
+        dto.setInstagram(restaurant.getInstagram());
+        dto.setTwitter(restaurant.getTwitter());
         // Fetch menu items
         List<MenuItemDTO> menuItems = restaurant.getMenuItems().stream()
                 .map(this::convertToMenuItemDTO)
@@ -280,5 +284,32 @@ public class RestaurantOwnerServiceImp implements RestaurantOwnerService {
         return dto;
     }
 
-	
+
+
+	@Override
+	public RestaurantOwnerDTO updateRestaurantDetails(long id, RestaurentRequest req, String jwt) {
+		// TODO Auto-generated method stub
+        // Fetch user by JWT token and retrieve restaurant data
+        User user = null;
+		try {
+			user = userServices.findUserByJwtToken(jwt);
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+        Restaurant restaurant = restaurantRepository.findById(id).orElse(null);
+        
+		restaurant.setAddress(req.getAddress());
+		restaurant.setName(req.getName());
+		restaurant.setPhone(req.getPhone());
+		restaurant.setEmail(req.getEmail());
+		restaurant.setInstagram(req.getInstagram());
+		restaurant.setTwitter(req.getTwitter());
+		restaurant.setDescription(req.getDescription());
+		restaurant.setOwner(user);
+		
+		Restaurant restaurant1= restaurantRepository.save(restaurant);
+		
+		return convertToRestaurantOwnerDTO(restaurant1);
+	}
 }

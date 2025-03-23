@@ -49,7 +49,14 @@ public class RestaurantOwnerController {
 		RestaurantOwnerDTO dto= restaurantOwnerService.createRestaurent(req, jwt);
 		return new ResponseEntity<>(dto, HttpStatus.CREATED);	
 	}
-
+	
+	@PutMapping("/{id}")
+	public ResponseEntity<RestaurantOwnerDTO> updateRestaurantDetails(@PathVariable long id, @RequestBody RestaurentRequest req,@RequestHeader("Authorization")String jwt) throws Exception
+	{
+		RestaurantOwnerDTO dto= restaurantOwnerService.updateRestaurantDetails(id,req,jwt);
+		return new ResponseEntity<>(dto, HttpStatus.OK);	
+	}
+	
 
     // Get restaurant dashboard
     @GetMapping("/user")

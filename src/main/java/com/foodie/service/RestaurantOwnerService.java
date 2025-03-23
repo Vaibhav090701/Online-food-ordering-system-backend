@@ -17,6 +17,7 @@ public interface RestaurantOwnerService {
     InventoryDTO getInventoryStatus(String token);
     
 	public RestaurantOwnerDTO createRestaurent(RestaurentRequest req, String token);
+	RestaurantOwnerDTO updateRestaurantDetails(long id,RestaurentRequest req, String jwt);
 
 
 

@@ -17,6 +17,7 @@ public class OrderDTO {
     private List<OrderItemDTO> items;
     private AddressDTO deliveryAddress;  // Add deliveryAddress to the DTO
     private UserProfileDTO userProfileDTO;
+    private PaymentResponse paymentResponse;
   
 
 }

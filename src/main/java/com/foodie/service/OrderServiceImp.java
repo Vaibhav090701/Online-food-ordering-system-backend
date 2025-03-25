@@ -24,6 +24,8 @@ import com.foodie.request.OrderItemRequest;
 import com.foodie.request.OrderRequest;
 import com.foodie.service.OrderService;
 import com.foodie.service.UserServices;
+import com.stripe.exception.StripeException;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -52,6 +54,9 @@ public class OrderServiceImp implements OrderService {
 
     @Autowired
     private UserServices userServices;
+    
+    @Autowired
+    private PaymentService paymentService;
     
     @Autowired
     private AddressRepository addressRepository; // Add this
@@ -254,6 +259,13 @@ public class OrderServiceImp implements OrderService {
         orderDTO.setOrderDate(order.getOrderDate());
         orderDTO.setTotalAmount(order.getTotalAmount());
         orderDTO.setStatus(order.getStatus());
+		try {
+			orderDTO.setPaymentResponse(paymentService.createPaymentLink(order));
+		} catch (StripeException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
         orderDTO.setItems(order.getItems().stream()
                 .map(this::convertToOrderItemDTO)
                 .collect(Collectors.toList()));

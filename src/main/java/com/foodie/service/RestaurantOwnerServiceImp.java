@@ -25,7 +25,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -183,6 +185,7 @@ public class RestaurantOwnerServiceImp implements RestaurantOwnerService {
         dto.setMenuItems(restaurant.getMenuItems().stream()
                 .map(this::convertToMenuItemDTO)
                 .collect(Collectors.toList()));
+        dto.setImages(restaurant.getImages());       
         return dto;
     }
 
@@ -280,6 +283,8 @@ public class RestaurantOwnerServiceImp implements RestaurantOwnerService {
                 .map(this::convertToIngredientDTO)
                 .collect(Collectors.toList());
         dto.setIngredients(ingredients);
+        
+        dto.setImages(restaurant.getImages());
 
         return dto;
     }
@@ -299,6 +304,10 @@ public class RestaurantOwnerServiceImp implements RestaurantOwnerService {
 		}
         Restaurant restaurant = restaurantRepository.findById(id).orElse(null);
         
+	    if (req.getImages().size() > 3) {
+	        throw new IllegalArgumentException("You can only upload a maximum of 3 images.");
+	    }
+        
 		restaurant.setAddress(req.getAddress());
 		restaurant.setName(req.getName());
 		restaurant.setPhone(req.getPhone());
@@ -307,6 +316,19 @@ public class RestaurantOwnerServiceImp implements RestaurantOwnerService {
 		restaurant.setTwitter(req.getTwitter());
 		restaurant.setDescription(req.getDescription());
 		restaurant.setOwner(user);
+		
+		// Get the current images of the restaurant
+	    Set<String> currentImages = new HashSet<>(restaurant.getImages());
+	    
+	    List<String> newImage=req.getImages().stream()
+	    		.filter(image -> !currentImages.contains(image))
+	    		.collect(Collectors.toList());
+	    
+	    // Add the new unique images to the restaurant's existing images
+	    currentImages.addAll(newImage);
+		
+	    // Update the restaurant's images with the new set (still checking duplicates)
+	    restaurant.setImages(new ArrayList<>(currentImages));
 		
 		Restaurant restaurant1= restaurantRepository.save(restaurant);
 		

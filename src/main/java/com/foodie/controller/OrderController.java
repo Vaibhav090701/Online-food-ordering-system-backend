@@ -4,6 +4,7 @@ import com.foodie.dto.OrderDTO;
 import com.foodie.model.OrderStatus;
 import com.foodie.request.OrderRequest;
 import com.foodie.service.OrderService;
+import com.foodie.service.PaymentService;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ public class OrderController {
 
     @Autowired
     private OrderService orderService;
+    
 
     // Place a new order
     @PostMapping
@@ -27,6 +29,7 @@ public class OrderController {
         OrderDTO orderDTO = null;
 		try {
 			orderDTO = orderService.placeOrder(token, request);
+//			System.out.println(orderDTO);
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

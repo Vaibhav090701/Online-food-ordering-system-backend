@@ -1,163 +1,193 @@
 package com.foodie.service;
 
-
 import com.foodie.dto.IngredientDTO;
+import com.foodie.dto.MenuCategoryDTO;
 import com.foodie.dto.MenuItemDTO;
 import com.foodie.model.Ingredients;
+import com.foodie.model.MenuCategory;
 import com.foodie.model.MenuItem;
 import com.foodie.model.Restaurant;
+import com.foodie.model.Role;
 import com.foodie.model.User;
 import com.foodie.repository.IngredientRepository;
+import com.foodie.repository.MenuCategoryRepository;
 import com.foodie.repository.MenuItemRepository;
 import com.foodie.repository.RestaurantRepository;
-import com.foodie.repository.UserRepository;
 import com.foodie.request.MenuItemRequest;
-import com.foodie.service.MenuService;
-import com.foodie.service.UserServices;
-
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class MenuServiceImp implements MenuService {
 
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private RestaurantRepository restaurantRepository;
-
-    @Autowired
-    private MenuItemRepository menuItemRepository;
-
-    @Autowired
-    private IngredientRepository ingredientRepository;
-
-    @Autowired
-    private UserServices userServices;
+    private final RestaurantRepository restaurantRepository;
+    private final MenuItemRepository menuItemRepository;
+    private final IngredientRepository ingredientRepository;
+    private final UserServices userServices;
+    private final MenuCategoryRepository menuCategoryRepository;
 
     @Override
-    public MenuItemDTO createMenuItem(MenuItemRequest request, String token) throws Exception {
-        // Fetch the current user (owner) based on the JWT token
-        User user = userServices.findUserByJwtToken(token);
-        
-        // Fetch the restaurant owned by this user
-        Restaurant restaurant = restaurantRepository.findByOwner(user);
+    @Transactional
+    public MenuItemDTO createMenuItem(String email, MenuItemRequest request) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
 
-        // Create a new MenuItem
+        MenuCategory category = menuCategoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Menu category not found"));
+        if (category.isDeleted()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Menu category is deleted");
+        }
+
         MenuItem menuItem = new MenuItem();
         menuItem.setName(request.getName());
         menuItem.setDescription(request.getDescription());
         menuItem.setPrice(request.getPrice());
         menuItem.setAvailable(request.isAvailable());
-        menuItem.setVegetarian(request.getIsVegetarian());
+        menuItem.setVegetarian(request.isVegetarian());
         menuItem.setImages(request.getImages());
         menuItem.setRestaurant(restaurant);
+        menuItem.setMenuCategory(category);
+        menuItem.setTemplateType(request.getTemplateType());
 
-        // Associate ingredients with the MenuItem
-        List<Ingredients> ingredients = ingredientRepository.findAllById(request.getIngredientIds());
+        List<Ingredients> ingredients = validateIngredients(request.getIngredientIds(), restaurant.getId());
         menuItem.setIngredients(ingredients);
 
-        // Save the MenuItem to the repository
-        menuItemRepository.save(menuItem);
-
-        // Convert MenuItem to DTO and return it
-        return convertToMenuItemDTO(menuItem);
+        MenuItem savedMenuItem = menuItemRepository.save(menuItem);
+        return convertToMenuItemDTO(savedMenuItem);
     }
-    
+
     @Override
-    public List<MenuItemDTO> getMenu(Long restaurantId, String jwt) {
-        try {
-			User user = userServices.findUserByJwtToken(jwt);
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        // Fetch menu items for the given restaurant
+    public List<MenuItemDTO> getMenu(Long restaurantId, String email) {
+        User user = validateUser(email);
         Restaurant restaurant = restaurantRepository.findById(restaurantId)
-                .orElseThrow(() -> new RuntimeException("Restaurant not found"));
-        return restaurant.getMenuItems().stream()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found"));
+
+        List<MenuItem> menuItems = menuItemRepository.findByRestaurantAndDeletedFalse(restaurantId);
+        return menuItems.stream()
                 .map(this::convertToMenuItemDTO)
-                .collect(Collectors.toList());
+                .toList();
     }
 
-
     @Override
-    public MenuItemDTO updateMenuItem(String token, Long itemId, MenuItemRequest request) throws Exception {
-        // Fetch the current user (owner) based on the JWT token
-        User user = userServices.findUserByJwtToken(token);
-        
-        // Fetch the MenuItem by ID
-        MenuItem menuItem = menuItemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Menu item not found"));
+    @Transactional
+    public MenuItemDTO updateMenuItem(String email, Long itemId, MenuItemRequest request) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
 
-        // Update the MenuItem fields
+        MenuItem menuItem = menuItemRepository.findByIdAndDeletedFalse(itemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Menu item not found"));
+        if (!menuItem.getRestaurant().equals(restaurant)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Menu item does not belong to the user's restaurant");
+        }
+
+        MenuCategory category = menuCategoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Menu category not found"));
+        if (category.isDeleted()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Menu category is deleted");
+        }
+
         menuItem.setName(request.getName());
         menuItem.setDescription(request.getDescription());
         menuItem.setPrice(request.getPrice());
         menuItem.setAvailable(request.isAvailable());
+        menuItem.setVegetarian(request.isVegetarian());
         menuItem.setImages(request.getImages());
-
-        // Update the ingredients associated with the MenuItem
-        List<Ingredients> ingredients = ingredientRepository.findAllById(request.getIngredientIds());
+        menuItem.setMenuCategory(category);
+        List<Ingredients> ingredients = validateIngredients(request.getIngredientIds(), restaurant.getId());
         menuItem.setIngredients(ingredients);
 
-        // Save the updated MenuItem
-        menuItemRepository.save(menuItem);
-
-        // Convert updated MenuItem to DTO and return it
-        return convertToMenuItemDTO(menuItem);
+        MenuItem savedMenuItem = menuItemRepository.save(menuItem);
+        return convertToMenuItemDTO(savedMenuItem);
     }
 
     @Override
-    public void deleteMenuItem(String token, Long itemId) throws Exception {
-        // Fetch the current user (owner) based on the JWT token
-        User user = userServices.findUserByJwtToken(token);
-        
-        // Find and delete the MenuItem by ID
-        menuItemRepository.deleteById(itemId);
+    @Transactional
+    public void deleteMenuItem(String email, Long itemId) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
+
+        MenuItem item = menuItemRepository.findByIdAndDeletedFalse(itemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Menu item not found"));
+        if (!item.getRestaurant().equals(restaurant)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Menu item does not belong to the user's restaurant");
+        }
+
+        item.setDeleted(true);
+        menuItemRepository.save(item);
     }
 
     @Override
-    public List<IngredientDTO> getIngredients(String token) throws Exception {
-        // Fetch the current user (owner) based on the JWT token
-        User user = userServices.findUserByJwtToken(token);
-         
-        Restaurant restaurant=restaurantRepository.findByOwner(user);
+    public List<IngredientDTO> getIngredients(String email) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
 
-        // Fetch all ingredients available in the restaurant
-        List<Ingredients> ingredients = ingredientRepository.findByRestaurant(restaurant);
-
-        // Convert Ingredient entities to DTOs and return them
+        List<Ingredients> ingredients = ingredientRepository.findByRestaurantAndDeletedFalse(restaurant);
         return ingredients.stream()
-                .map(ingredient -> convertToIngredientDTO(ingredient))
-                .collect(Collectors.toList());
+                .map(this::convertToIngredientDTO)
+                .toList();
     }
 
     @Override
-    public IngredientDTO updateIngredientStock(String token, Long ingredientId, int quantity) throws Exception {
-        // Fetch the current user (owner) based on the JWT token
-        User user = userServices.findUserByJwtToken(token);
+    @Transactional
+    public IngredientDTO updateIngredientStock(String email, Long ingredientId, int quantity) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
 
-        // Find the Ingredient by ID
-        Ingredients ingredient = ingredientRepository.findById(ingredientId)
-                .orElseThrow(() -> new RuntimeException("Ingredient not found"));
+        Ingredients ingredient = ingredientRepository.findByIdAndDeletedFalse(ingredientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
+        if (!ingredient.getRestaurant().equals(restaurant)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Ingredient does not belong to the user's restaurant");
+        }
 
-        // Update the ingredient stock
         ingredient.setQuantityInStock(quantity);
-
-        // Save the updated Ingredient
-        ingredientRepository.save(ingredient);
-
-        // Convert Ingredient entity to DTO and return it
-        return convertToIngredientDTO(ingredient);
+        Ingredients savedIngredient = ingredientRepository.save(ingredient);
+        return convertToIngredientDTO(savedIngredient);
     }
 
-    // Helper methods to convert entities to DTOs
+    private User validateUser(String email) {
+        User user = userServices.findUserByEmail(email);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+        return user;
+    }
+
+    private User validateAdminUser(String email) {
+        User user = userServices.findUserByEmail(email);
+        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Unauthorized: User is not an admin");
+        }
+        return user;
+    }
+
+    private Restaurant validateRestaurantOwnership(User user) {
+        return restaurantRepository.findByOwnerAndDeletedFalse(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found for the user"));
+    }
+
+    private List<Ingredients> validateIngredients(List<Long> ingredientIds, Long restaurantId) {
+        if (ingredientIds == null || ingredientIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<Ingredients> ingredients = ingredientRepository.findAllByIdAndDeletedFalse(ingredientIds);
+        if (ingredients.size() != ingredientIds.size()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "One or more ingredients not found or deleted");
+        }
+        for (Ingredients ingredient : ingredients) {
+            if (!ingredient.getRestaurant().getId().equals(restaurantId)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ingredient does not belong to the restaurant");
+            }
+        }
+        return ingredients;
+    }
+
     private MenuItemDTO convertToMenuItemDTO(MenuItem menuItem) {
         MenuItemDTO dto = new MenuItemDTO();
         dto.setId(menuItem.getId());
@@ -165,21 +195,15 @@ public class MenuServiceImp implements MenuService {
         dto.setDescription(menuItem.getDescription());
         dto.setPrice(menuItem.getPrice());
         dto.setAvailable(menuItem.isAvailable());
+        dto.setDeleted(menuItem.isDeleted());
         dto.setVegetarian(menuItem.isVegetarian());
         dto.setImages(menuItem.getImages());
-        List<IngredientDTO>dtos=new ArrayList<IngredientDTO>();
-        for(Ingredients ingredients:menuItem.getIngredients()) {
-        	IngredientDTO dto1=new IngredientDTO();
-        	dto1.setDescription(ingredients.getDescription());
-        	dto1.setName(ingredients.getName());
-        	dto1.setId(ingredients.getId());
-        	dto1.setQuantityInStock(ingredients.getQuantityInStock());
-        	dto1.setUnit(ingredients.getUnit());
-        	
-        	dtos.add(dto1);
-        }
-        
-        dto.setIngredients(dtos);
+        dto.setCategory(convertToMenuCategoryDTO(menuItem.getMenuCategory()));
+        dto.setTemplateType(menuItem.getTemplateType());
+        List<IngredientDTO> ingredientDTOs = menuItem.getIngredients().stream()
+                .map(this::convertToIngredientDTO)
+                .toList();
+        dto.setIngredients(ingredientDTOs);
         return dto;
     }
 
@@ -187,9 +211,23 @@ public class MenuServiceImp implements MenuService {
         IngredientDTO dto = new IngredientDTO();
         dto.setId(ingredient.getId());
         dto.setName(ingredient.getName());
-        dto.setDescription(ingredient.getDescription());
         dto.setQuantityInStock(ingredient.getQuantityInStock());
         dto.setUnit(ingredient.getUnit());
+        dto.setPrice(ingredient.getPrice());
+        dto.setDeleted(ingredient.isDeleted());
+        return dto;
+    }
+
+    private MenuCategoryDTO convertToMenuCategoryDTO(MenuCategory menuCategory) {
+        if (menuCategory == null) {
+            return null;
+        }
+        MenuCategoryDTO dto = new MenuCategoryDTO();
+        dto.setId(menuCategory.getId());
+        dto.setCategoryName(menuCategory.getCategoryName());
+        dto.setCategoryDescription(menuCategory.getCategoryDescription());
+        dto.setCategoryImage(menuCategory.getCategoryImages());
+        dto.setDeleted(menuCategory.isDeleted());
         return dto;
     }
 }

@@ -11,7 +11,7 @@ public class CartItemDTO {
     private String name;
     private int quantity;
     private double price;
-	private List<String> ingredients;
+	private List<IngredientDTO> ingredients;
 	private long id;
 	private long restaurantId;
 

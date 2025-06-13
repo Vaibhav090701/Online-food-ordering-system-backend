@@ -25,6 +25,8 @@ public class Ingredients {
     private String description;
     private int quantityInStock;
     private String unit;  // e.g., kg, grams, liters
+    private double price;
+    private boolean deleted; 
 
     @ManyToOne
     @JoinColumn(name = "restaurant_id")

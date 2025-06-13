@@ -32,6 +32,12 @@ public class MenuItem {
     private boolean available = true;
     
     private boolean isVegetarian;
+    private String templateType;
+    private boolean deleted;
+    
+    @ManyToOne
+    @JoinColumn(name = "menu_category_id")
+    private MenuCategory menuCategory;
 
     
     @Column(length = 1000)

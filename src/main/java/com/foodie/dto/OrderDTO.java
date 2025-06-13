@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.foodie.model.OrderStatus;
+import com.foodie.model.PaymentStatus;
 
 import lombok.Data;
 
@@ -18,6 +19,9 @@ public class OrderDTO {
     private AddressDTO deliveryAddress;  // Add deliveryAddress to the DTO
     private UserProfileDTO userProfileDTO;
     private PaymentResponse paymentResponse;
-  
+    private PaymentStatus paymentStatus;
+    private String paymentMethod;
+ 
+    private boolean deleted;
 
 }

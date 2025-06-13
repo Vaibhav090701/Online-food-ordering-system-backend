@@ -9,5 +9,5 @@ import com.stripe.exception.StripeException;
 public interface PaymentService {
 	
 	public PaymentResponse createPaymentLink(Order order) throws StripeException;
-
+	public PaymentResponse processPayment(Double amount, String paymentToken) throws StripeException;
 }

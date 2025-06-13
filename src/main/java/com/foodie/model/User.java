@@ -1,7 +1,9 @@
 package com.foodie.model;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 import com.foodie.dto.RestaurantOwnerDTO;
 
@@ -16,6 +18,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -23,11 +26,14 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 @Table(name = "users")
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    
+    private String userId;
 
     private String username;
 
@@ -36,6 +42,13 @@ public class User {
     private String password;
 
     private Role role= Role.ROLE_CUSTOMER;
+    
+    private String verifyOtp;
+    private String resetOtp;
+    private long verifyOtpExpireAt;
+    private long resetOtpExpireAt;
+//    private boolean isEmailVerified;
+    private boolean emailVerified;
     
     @ElementCollection
     private List<Restaurant> favourites = new ArrayList<>();

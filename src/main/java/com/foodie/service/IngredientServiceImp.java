@@ -1,186 +1,171 @@
 package com.foodie.service;
 
 import com.foodie.dto.IngredientDTO;
+import com.foodie.dto.PreDefineIngredientDTO;
 import com.foodie.model.Ingredients;
+import com.foodie.model.PreDefineIngredients;
 import com.foodie.model.Restaurant;
 import com.foodie.model.Role;
 import com.foodie.model.User;
 import com.foodie.repository.IngredientRepository;
+import com.foodie.repository.PreDefineIngredientRepository;
 import com.foodie.repository.RestaurantRepository;
-import com.foodie.repository.UserRepository;
 import com.foodie.request.IngredientRequest;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class IngredientServiceImp implements IngredientService {
 
-    @Autowired
-    private IngredientRepository ingredientRepository;
-
-    @Autowired
-    private RestaurantRepository restaurantRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private UserServices userServices;
+    private final IngredientRepository ingredientRepository;
+    private final RestaurantRepository restaurantRepository;
+    private final UserServices userServices;
+    private final PreDefineIngredientRepository preDefineIngredientRepository;
 
     @Override
-    public IngredientDTO createIngredient(String token, IngredientRequest ingredientRequest) {
-        // Validate user by token
-        User user = null;
-        try {
-            user = userServices.findUserByJwtToken(token);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+    @Transactional
+    public IngredientDTO createIngredient(String email, IngredientRequest ingredientRequest) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
 
-        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
-            throw new IllegalStateException("Unauthorized: User is not an admin.");
-        }
-
-        // Find the restaurant owned by the user
-        Restaurant restaurant = restaurantRepository.findByOwner(user);
-        if (restaurant == null) {
-            throw new IllegalStateException("Unauthorized: Restaurant not found for the user.");
-        }
-
-        // Create the ingredient
         Ingredients ingredient = new Ingredients();
         ingredient.setName(ingredientRequest.getName());
-        ingredient.setDescription(ingredientRequest.getDescription());
         ingredient.setQuantityInStock(ingredientRequest.getQuantityInStock());
         ingredient.setUnit(ingredientRequest.getUnit());
+        ingredient.setPrice(ingredientRequest.getPrice());
         ingredient.setRestaurant(restaurant);
 
-        // Save and return the converted DTO
         Ingredients savedIngredient = ingredientRepository.save(ingredient);
         return convertToDTO(savedIngredient);
     }
 
     @Override
-    public List<IngredientDTO> getIngredients(String token) {
-        // Validate user by token
-        User user = null;
-        try {
-            user = userServices.findUserByJwtToken(token);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+    public List<IngredientDTO> getIngredients(String email) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
 
-        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
-            throw new IllegalStateException("Unauthorized: User is not an admin.");
-        }
-
-        // Find the restaurant owned by the user
-        Restaurant restaurant = restaurantRepository.findByOwner(user);
-        if (restaurant == null) {
-            throw new IllegalStateException("Unauthorized: Restaurant not found for the user.");
-        }
-
-        List<Ingredients> ingredients = ingredientRepository.findByRestaurant(restaurant);
+        List<Ingredients> ingredients = ingredientRepository.findByRestaurantAndDeletedFalse(restaurant);
         return ingredients.stream()
                 .map(this::convertToDTO)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
-    public IngredientDTO getIngredientById(String token, Long ingredientId) {
-        // Validate user by token
-        User user = null;
-        try {
-            user = userServices.findUserByJwtToken(token);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+    public IngredientDTO getIngredientById(String email, Long ingredientId) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
 
-        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
-            throw new IllegalStateException("Unauthorized: User is not an admin.");
+        Ingredients ingredient = ingredientRepository.findByIdAndDeletedFalse(ingredientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
+        if (!restaurant.equals(ingredient.getRestaurant())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Ingredient does not belong to the user's restaurant");
         }
-
-        // Find the restaurant owned by the user
-        Restaurant restaurant = restaurantRepository.findByOwner(user);
-        if (restaurant == null) {
-            throw new IllegalStateException("Unauthorized: Restaurant not found for the user.");
-        }
-
-        Ingredients ingredient = ingredientRepository.findById(ingredientId).orElse(null);
-        if (ingredient != null) {
-            return convertToDTO(ingredient);
-        }
-        return null;
+        return convertToDTO(ingredient);
     }
 
     @Override
-    public IngredientDTO updateIngredient(String token, Long ingredientId, IngredientRequest ingredientRequest) {
-        // Validate user by token
-        User user = null;
-        try {
-            user = userServices.findUserByJwtToken(token);
-        } catch (Exception e) {
-            e.printStackTrace();
+    @Transactional
+    public IngredientDTO updateIngredient(String email, Long ingredientId, IngredientRequest ingredientRequest) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
+
+        Ingredients ingredient = ingredientRepository.findByIdAndDeletedFalse(ingredientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
+        if (!restaurant.equals(ingredient.getRestaurant())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Ingredient does not belong to the user's restaurant");
         }
 
-        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
-            throw new IllegalStateException("Unauthorized: User is not an admin.");
+        ingredient.setName(ingredientRequest.getName());
+        ingredient.setQuantityInStock(ingredientRequest.getQuantityInStock());
+        ingredient.setUnit(ingredientRequest.getUnit());
+        ingredient.setPrice(ingredientRequest.getPrice());
+        ingredient.setRestaurant(restaurant);
+
+        Ingredients updatedIngredient = ingredientRepository.save(ingredient);
+        return convertToDTO(updatedIngredient);
+    }
+    
+    @Override
+    @Transactional
+    public IngredientDTO updateStock(String email, Long ingredientId, Integer quantityInStock) {
+        if (quantityInStock < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity in stock cannot be negative");
         }
 
-        // Find the restaurant owned by the user
-        Restaurant restaurant = restaurantRepository.findByOwner(user);
-        if (restaurant == null) {
-            throw new IllegalStateException("Unauthorized: Restaurant not found for the user.");
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
+
+        Ingredients ingredient = ingredientRepository.findByIdAndDeletedFalse(ingredientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
+        if (!restaurant.equals(ingredient.getRestaurant())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Ingredient does not belong to the user's restaurant");
         }
 
-        Ingredients ingredient = ingredientRepository.findById(ingredientId).orElse(null);
-        if (ingredient != null) {
-            ingredient.setName(ingredientRequest.getName());
-            ingredient.setDescription(ingredientRequest.getDescription());
-            ingredient.setQuantityInStock(ingredientRequest.getQuantityInStock());
-            ingredient.setUnit(ingredientRequest.getUnit());
-            ingredient.setRestaurant(restaurant);
-
-            Ingredients updatedIngredient = ingredientRepository.save(ingredient);
-            return convertToDTO(updatedIngredient);
-        }
-        return null;
+        ingredient.setQuantityInStock(quantityInStock);
+        Ingredients updatedIngredient = ingredientRepository.save(ingredient);
+        return convertToDTO(updatedIngredient);
     }
 
     @Override
-    public void deleteIngredient(String token, Long ingredientId) {
-        // Validate user by token
-        User user = null;
-        try {
-            user = userServices.findUserByJwtToken(token);
-        } catch (Exception e) {
-            e.printStackTrace();
+    @Transactional
+    public void deleteIngredient(String email, Long ingredientId) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = validateRestaurantOwnership(user);
+
+        Ingredients ingredient = ingredientRepository.findByIdAndDeletedFalse(ingredientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ingredient not found"));
+        if (!restaurant.equals(ingredient.getRestaurant())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Ingredient does not belong to the user's restaurant");
         }
 
-        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
-            throw new IllegalStateException("Unauthorized: User is not an admin.");
-        }
-
-        // Find the restaurant owned by the user
-        Restaurant restaurant = restaurantRepository.findByOwner(user);
-        if (restaurant == null) {
-            throw new IllegalStateException("Unauthorized: Restaurant not found for the user.");
-        }
-
-        ingredientRepository.deleteById(ingredientId);
+        ingredient.setDeleted(true);
+        ingredientRepository.save(ingredient);
     }
 
-    // Method to convert Ingredients object to IngredientDTO
+    private User validateAdminUser(String email) {
+        User user = userServices.findUserByEmail(email);
+        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Unauthorized: User is not an admin");
+        }
+        return user;
+    }
+
+    private Restaurant validateRestaurantOwnership(User user) {
+        Restaurant restaurant = restaurantRepository.findByOwnerAndDeletedFalse(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found for the user"));
+        return restaurant;
+    }
+    
+    @Override
+    public List<PreDefineIngredientDTO> getAllPreDefineIngredients() {
+        List<PreDefineIngredients> ingredients = preDefineIngredientRepository.findAll();
+        return ingredients.stream()
+                .map(this::convertToPreDefineDTO)
+                .toList();
+    }
+
+    private PreDefineIngredientDTO convertToPreDefineDTO(PreDefineIngredients ingredient) {
+        PreDefineIngredientDTO dto = new PreDefineIngredientDTO();
+        dto.setId(ingredient.getId());
+        dto.setName(ingredient.getName());
+        dto.setUnit(ingredient.getUnit());
+        return dto;
+    }
+
     private IngredientDTO convertToDTO(Ingredients ingredient) {
         IngredientDTO dto = new IngredientDTO();
         dto.setId(ingredient.getId());
         dto.setName(ingredient.getName());
-        dto.setDescription(ingredient.getDescription());
         dto.setQuantityInStock(ingredient.getQuantityInStock());
         dto.setUnit(ingredient.getUnit());
+        dto.setPrice(ingredient.getPrice());
+        dto.setDeleted(ingredient.isDeleted());
         return dto;
     }
 }

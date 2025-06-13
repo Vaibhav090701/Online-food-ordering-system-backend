@@ -9,5 +9,7 @@ public class IngredientDTO {
 	    private String description;
 	    private int quantityInStock;
 	    private String unit;
+	    private double price;
+	    private boolean deleted;
 
 }

@@ -34,7 +34,10 @@ public class Restaurant {
     private String email;
     private String twitter;
     private String instagram;
-
+    private String restaurantCategory;
+    private String city;
+    private String cuisineType;
+    private boolean deleted;
     private boolean open;
     
     @ElementCollection

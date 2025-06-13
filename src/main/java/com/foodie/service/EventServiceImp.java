@@ -1,103 +1,143 @@
 package com.foodie.service;
 
-import java.util.List;
-import java.util.stream.Collectors;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import com.foodie.dto.EventDTO;
 import com.foodie.model.Event;
 import com.foodie.model.Restaurant;
+import com.foodie.model.User;
 import com.foodie.repository.EventRepository;
 import com.foodie.repository.RestaurantRepository;
 import com.foodie.request.CreateEventRequest;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class EventServiceImp implements EventService {
-	
-	@Autowired
-	private EventRepository eventRepository;
-	
-	@Autowired
-	private RestaurantRepository restaurantRepository;
 
-	@Override
-	public EventDTO createEvent(CreateEventRequest events) throws Exception {
-		// TODO Auto-generated method stub
-		Event events2=new Event();
-		Restaurant restaurent=restaurantRepository.findById(events.getRestaurentId()).orElse(null);
-		
-		events2.setEndDate(events.getEndDate());
-		events2.setEventName(events.getEventName());
-		events2.setImageUrl(events.getImageUrl());
-		events2.setLocation(events.getLocation());
-		events2.setRestaurant(restaurent);
-		events2.setStartDate(events.getStartDate());
-	
-		Event events3= eventRepository.save(events2);
-		return convertToEventDTO(events3);
-	}
+    private final EventRepository eventRepository;
+    private final RestaurantRepository restaurantRepository;
+    private final UserServices userServices;
 
-	@Override
-	public List<EventDTO> getRestaurentEvents(long restaurentId) throws Exception {
-		// TODO Auto-generated method stub
-		Restaurant restaurent= restaurantRepository.findById(restaurentId).orElse(null);
-		List<Event>events=eventRepository.findByRestaurant(restaurent);
-		return events.stream().map(this::convertToEventDTO).collect(Collectors.toList());
-	}
+    @Override
+    @Transactional
+    public EventDTO createEvent(CreateEventRequest request, String email) {
+        User user = validateUser(email);
+        Restaurant restaurant = validateRestaurant(request.getRestaurantId(), user);
 
-	@Override
-	public String deleteEvent(long eventId) {
-		// TODO Auto-generated method stub
-		
-		eventRepository.deleteById(eventId);
-		return "Event Deleted";
-		
-		
-	}
+        Event event = new Event();
+        event.setEventName(request.getEventName());
+        event.setStartDate(request.getStartDate());
+        event.setEndDate(request.getEndDate());
+        event.setLocation(request.getLocation());
+        event.setImageUrl(request.getImageUrl());
+        event.setRestaurant(restaurant);
+        event.setDeleted(false);
 
-	public EventDTO updateEvent(long eventId, EventDTO events, long restaurentId) throws Exception {
-		// TODO Auto-generated method stub
-		Event events2=eventRepository.findById(eventId).orElse(null);
-		Restaurant restaurent=restaurantRepository.findById(restaurentId).orElse(null);
-		
-		events2.setEndDate(events.getEndDate());
-		events2.setEventName(events.getEventName());
-		events2.setImageUrl(events.getImageUrl());
-		events2.setLocation(events.getLocation());
-		events2.setRestaurant(restaurent);
-		events2.setStartDate(events.getStartDate());
-		
-		Event events3=eventRepository.save(events2);
-		return convertToEventDTO(events3);
-	}
+        Event savedEvent = eventRepository.save(event);
+        return convertToEventDTO(savedEvent);
+    }
 
-	@Override
-	public EventDTO findEventById(long eventId) {
-		// TODO Auto-generated method stub
-		Event events=eventRepository.findById(eventId).orElse(null);
-		return convertToEventDTO(events);
-	}
+    @Override
+    public List<EventDTO> getRestaurantEvents(Long restaurantId) {
+        Restaurant restaurant = restaurantRepository.findByIdAndDeletedFalse(restaurantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found"));
 
-	@Override
-	public List<EventDTO> getAllEvents() {
-		// TODO Auto-generated method stub
-		List<Event> events=eventRepository.findAll();
-		return events.stream().map(this::convertToEventDTO).collect(Collectors.toList());
-	}
-	
-	public EventDTO convertToEventDTO(Event event) {
-		
-		EventDTO dto=new EventDTO();
-		dto.setEndDate(event.getEndDate());
-		dto.setEventName(event.getEventName());
-		dto.setImageUrl(event.getImageUrl());
-		dto.setLocation(event.getLocation());
-		dto.setRestaurentId(event.getRestaurant().getId());
-		dto.setStartDate(event.getStartDate());
-		 return dto;
-		
-	}
+        List<Event> events = eventRepository.findByRestaurantAndDeletedFalse(restaurant);
+        return events.stream()
+                .map(this::convertToEventDTO)
+                .toList();
+    }
 
+    @Override
+    @Transactional
+    public String deleteEvent(Long eventId, String email) {
+        User user = validateUser(email);
+        Event event = eventRepository.findByIdAndDeletedFalse(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
+
+        Restaurant restaurant = event.getRestaurant();
+        if (!restaurant.getOwner().getEmail().equals(email)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to delete this event");
+        }
+
+        event.setDeleted(true);
+        eventRepository.save(event);
+        return "Event deleted successfully";
+    }
+
+    @Override
+    @Transactional
+    public EventDTO updateEvent(Long eventId, EventDTO eventDTO, String email) {
+        User user = validateUser(email);
+        Event event = eventRepository.findByIdAndDeletedFalse(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
+
+        Restaurant restaurant = validateRestaurant(eventDTO.getRestaurantId(), user);
+        if (!event.getRestaurant().getOwner().getEmail().equals(email)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to update this event");
+        }
+
+        event.setEventName(eventDTO.getEventName());
+        event.setStartDate(eventDTO.getStartDate());
+        event.setEndDate(eventDTO.getEndDate());
+        event.setLocation(eventDTO.getLocation());
+        event.setImageUrl(eventDTO.getImageUrl());
+        event.setRestaurant(restaurant);
+
+        Event savedEvent = eventRepository.save(event);
+        return convertToEventDTO(savedEvent);
+    }
+
+    @Override
+    public EventDTO findEventById(Long eventId) {
+        Event event = eventRepository.findByIdAndDeletedFalse(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
+        return convertToEventDTO(event);
+    }
+
+    @Override
+    public List<EventDTO> getAllEvents() {
+        List<Event> events = eventRepository.findByDeletedFalse();
+        return events.stream()
+                .map(this::convertToEventDTO)
+                .toList();
+    }
+
+    private User validateUser(String email) {
+        User user = userServices.findUserByEmail(email);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+        return user;
+    }
+
+    private Restaurant validateRestaurant(Long restaurantId, User user) {
+        Restaurant restaurant = restaurantRepository.findByIdAndDeletedFalse(restaurantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found"));
+        if (!restaurant.getOwner().equals(user)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to manage this restaurant");
+        }
+        return restaurant;
+    }
+
+    private EventDTO convertToEventDTO(Event event) {
+        if (event == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found");
+        }
+        EventDTO dto = new EventDTO();
+        dto.setId(event.getId());
+        dto.setEventName(event.getEventName());
+        dto.setStartDate(event.getStartDate());
+        dto.setEndDate(event.getEndDate());
+        dto.setLocation(event.getLocation());
+        dto.setImageUrl(event.getImageUrl());
+        dto.setRestaurantId(event.getRestaurant().getId());
+        dto.setDeleted(event.isDeleted());
+        return dto;
+    }
 }

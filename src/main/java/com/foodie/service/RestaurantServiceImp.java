@@ -6,130 +6,128 @@ import com.foodie.dto.RestaurantOwnerDTO;
 import com.foodie.model.Ingredients;
 import com.foodie.model.MenuItem;
 import com.foodie.model.Restaurant;
+import com.foodie.model.Role;
 import com.foodie.model.User;
 import com.foodie.repository.RestaurantRepository;
 import com.foodie.repository.UserRepository;
-import com.foodie.request.RestaurentRequest;
-import com.foodie.service.RestaurantService;
-import com.foodie.service.UserServices;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class RestaurantServiceImp implements RestaurantService {
 
-    @Autowired
-    private RestaurantRepository restaurantRepository;
+    private final RestaurantRepository restaurantRepository;
+    private final UserRepository userRepository;
+    private final UserServices userServices;
 
-    @Autowired
-    private UserRepository userRepository;
+    @Override
+    public List<RestaurantOwnerDTO> getAllRestaurants() {
+        List<Restaurant> restaurants = restaurantRepository.findByDeletedFalse();
+        return restaurants.stream()
+                .map(this::convertToRestaurantOwnerDTO)
+                .toList();
+    }
 
-    @Autowired
-    private UserServices userServices;
+    @Override
+    public RestaurantOwnerDTO getRestaurantById(long id) {
+        Restaurant restaurant = restaurantRepository.findByIdAndDeletedFalse(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found"));
+        return convertToRestaurantOwnerDTO(restaurant);
+    }
+
+    @Override
+    @Transactional
+    public RestaurantOwnerDTO addFavourites(long restaurantId, String email) {
+        User user = validateUser(email);
+        Restaurant restaurant = restaurantRepository.findByIdAndDeletedFalse(restaurantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found"));
+
+        List<Restaurant> favourites = user.getFavourites();
+        boolean isFavourite = favourites.stream().anyMatch(fav -> fav.getId().equals(restaurantId));
+
+        if (isFavourite) {
+            favourites.removeIf(fav -> fav.getId().equals(restaurantId));
+        } else {
+            favourites.add(restaurant);
+        }
+
+        userRepository.save(user);
+        return convertToRestaurantOwnerDTO(restaurant);
+    }
 
     @Override
     public List<RestaurantOwnerDTO> searchRestaurants(String query) {
-        // Search restaurants based on name
-        List<Restaurant> restaurants = restaurantRepository.searchByName(query);
+        if (query == null || query.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Search query cannot be empty");
+        }
+        List<Restaurant> restaurants = restaurantRepository.searchByNameAndDeletedFalse(query.trim());
         return restaurants.stream()
                 .map(this::convertToRestaurantOwnerDTO)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
-    public RestaurantOwnerDTO getRestaurantDetails(Long restaurantId) {
-        // Fetch restaurant details by ID
-        Restaurant restaurant = restaurantRepository.findById(restaurantId)
-                .orElseThrow(() -> new RuntimeException("Restaurant not found"));
-        return convertToRestaurantOwnerDTO(restaurant);
+    @Transactional
+    public RestaurantOwnerDTO approveRestaurant(String email, Long restaurantId, boolean approve) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = restaurantRepository.findByIdAndDeletedFalse(restaurantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found"));
+
+        restaurant.setOpen(approve);
+        Restaurant savedRestaurant = restaurantRepository.save(restaurant);
+        return convertToRestaurantOwnerDTO(savedRestaurant);
     }
 
-
-    // Admin-only methods
     @Override
-    public RestaurantOwnerDTO approveRestaurant(String token, Long restaurantId, boolean approve) {
-        // Ensure that the user has admin privileges
-        User user = null;
-		try {
-			user = userServices.findUserByJwtToken(token);
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        if (!user.getRole().equals("ADMIN")) {
-            throw new RuntimeException("Only admin can approve restaurants");
+    public List<RestaurantOwnerDTO> getPendingRestaurants(String email) {
+        User user = validateAdminUser(email);
+        List<Restaurant> pendingRestaurants = restaurantRepository.findByOpenFalseAndDeletedFalse();
+        return pendingRestaurants.stream()
+                .map(this::convertToRestaurantOwnerDTO)
+                .toList();
+    }
+
+    private User validateUser(String email) {
+        User user = userServices.findUserByEmail(email);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
         }
-
-        // Fetch the restaurant by ID
-        Restaurant restaurant = restaurantRepository.findById(restaurantId)
-                .orElseThrow(() -> new RuntimeException("Restaurant not found"));
-
-        // Approve or reject the restaurant based on the 'approve' parameter
-        restaurant.setOpen(approve ? true : false);
-        restaurantRepository.save(restaurant);
-
-        // Convert to DTO and return
-        return convertToRestaurantOwnerDTO(restaurant);
+        return user;
     }
 
-    @Override
-    public List<RestaurantOwnerDTO> getPendingRestaurants(String token) {
-//        // Ensure that the user has admin privileges
-//        User user = null;
-//		try {
-//			user = userServices.findUserByJwtToken(token);
-//		} catch (Exception e) {
-//			// TODO Auto-generated catch block
-//			e.printStackTrace();
-//		}
-//        if (!user.getRole().equals("ADMIN")) {
-//            throw new RuntimeException("Only admin can view pending restaurants");
-//        }
-//
-//        // Fetch restaurants with "PENDING" status
-//        List<Restaurant> pendingRestaurants = restaurantRepository.findByStatus("PENDING");
-//        return pendingRestaurants.stream()
-//                .map(this::convertToRestaurantOwnerDTO)
-//                .collect(Collectors.toList());
-    	return null;
+    private User validateAdminUser(String email) {
+        User user = userServices.findUserByEmail(email);
+        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Unauthorized: User is not an admin");
+        }
+        return user;
     }
-    
-	@Override
-	public List<RestaurantOwnerDTO> getAllRestaurant(String token) {
-		// TODO Auto-generated method stub
-		List<Restaurant>restaurants=restaurantRepository.findAll();
-		return restaurants.stream()
-				.map(this::convertToRestaurantOwnerDTO)
-				.collect(Collectors.toList());
-		
-	}
 
-
-    // Helper methods to convert entities to DTOs
     private RestaurantOwnerDTO convertToRestaurantOwnerDTO(Restaurant restaurant) {
         RestaurantOwnerDTO dto = new RestaurantOwnerDTO();
         dto.setId(restaurant.getId());
         dto.setName(restaurant.getName());
         dto.setAddress(restaurant.getAddress());
+        dto.setCity(restaurant.getCity());
         dto.setPhone(restaurant.getPhone());
         dto.setStatus(restaurant.isOpen());
+        dto.setDeleted(restaurant.isDeleted());
         dto.setDescription(restaurant.getDescription());
+        dto.setCuisineType(restaurant.getCuisineType());
+        dto.setRestaurantCategory(restaurant.getRestaurantCategory());
         dto.setImages(restaurant.getImages());
-        
-        List<IngredientDTO> dtos=new ArrayList<IngredientDTO>();
         dto.setIngredients(restaurant.getIngredients().stream()
-        		.map(this::convertToDTO)
-        		.collect(Collectors.toList()));
-        
+                .map(this::convertToIngredientDTO)
+                .toList());
         dto.setMenuItems(restaurant.getMenuItems().stream()
                 .map(this::convertToMenuItemDTO)
-                .collect(Collectors.toList()));
-        // Add other necessary fields here (like ingredients)
+                .toList());
         return dto;
     }
 
@@ -140,52 +138,18 @@ public class RestaurantServiceImp implements RestaurantService {
         dto.setDescription(menuItem.getDescription());
         dto.setPrice(menuItem.getPrice());
         dto.setAvailable(menuItem.isAvailable());
-        // Add ingredients and other details as necessary
+        dto.setDeleted(menuItem.isDeleted());
         return dto;
     }
-    
-    // Method to convert Ingredients object to IngredientDTO
-    private IngredientDTO convertToDTO(Ingredients ingredient) {
+
+    private IngredientDTO convertToIngredientDTO(Ingredients ingredient) {
         IngredientDTO dto = new IngredientDTO();
         dto.setId(ingredient.getId());
         dto.setName(ingredient.getName());
-        dto.setDescription(ingredient.getDescription());
         dto.setQuantityInStock(ingredient.getQuantityInStock());
         dto.setUnit(ingredient.getUnit());
+        dto.setPrice(ingredient.getPrice());
+        dto.setDeleted(ingredient.isDeleted());
         return dto;
     }
-
-	@Override
-	public RestaurantOwnerDTO getRestaurantById(long id) {
-		// TODO Auto-generated method stub
-		Restaurant restaurant=restaurantRepository.findById(id).orElse(null);
-		return convertToRestaurantOwnerDTO(restaurant);
-	}
-
-	@Override
-	public RestaurantOwnerDTO addFavourites(long restaurentId, User user) {
-		// TODO Auto-generated method stub
-		Restaurant restaurant=restaurantRepository.findById(restaurentId).orElse(null);
-		
-		boolean isFavourite=false;
-		List<Restaurant>restaurants=user.getFavourites();
-		for( Restaurant res: restaurants) {
-			if(res.getId().equals(restaurentId)) {
-				isFavourite=true;
-				break;
-			}			
-		}
-		if(isFavourite) {
-			restaurants.removeIf(favourite->favourite.getId().equals(restaurants));
-		}
-		else {
-			restaurants.add(restaurant);
-		}
-		userRepository.save(user);
-		return convertToRestaurantOwnerDTO(restaurant);
-	}
-
-
-
-	
 }

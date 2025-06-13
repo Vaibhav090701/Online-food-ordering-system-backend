@@ -2,6 +2,8 @@ package com.foodie.dto;
 
 import java.util.List;
 
+import com.foodie.model.MenuCategory;
+
 import lombok.Data;
 
 @Data
@@ -16,6 +18,9 @@ public class MenuItemDTO {
     private List<String>images;
     private List<IngredientDTO> ingredients;
     private Long restaurantId;
+    private String templateType;
+    private MenuCategoryDTO category;
+    private boolean deleted;
 
 
 }

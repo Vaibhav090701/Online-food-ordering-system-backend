@@ -25,6 +25,7 @@ public class OrderItem {
     
     @ManyToOne
     private MenuItem menuItem;
+    private boolean deleted;
     
     private int quantity;
     private double price;

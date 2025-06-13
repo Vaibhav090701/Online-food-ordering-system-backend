@@ -1,23 +1,22 @@
 package com.foodie.request;
 
 import java.util.List;
-
-import com.fasterxml.jackson.annotation.JsonInclude;
-
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 
 @Data
-@JsonInclude(JsonInclude.Include.NON_NULL) // To ignore null values during serialization
-
+@NoArgsConstructor
+@AllArgsConstructor
 public class CartItemRequest {
-	
-	private Long restaurantId;
-
+    @NotNull(message = "Menu item ID is required")
     private Long menuItemId;
-    
-    private int quantity;
-    
-	private List<String> ingredients;
 
+    @Min(value = 1, message = "Quantity must be at least 1")
+    private int quantity;
+
+    private List<String> ingredients;
 
 }

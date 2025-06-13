@@ -1,24 +1,19 @@
 package com.foodie.service;
 
-import java.util.List;
-
 import com.foodie.dto.InventoryDTO;
 import com.foodie.dto.MenuItemDTO;
 import com.foodie.dto.OrderDTO;
 import com.foodie.dto.RestaurantOwnerDTO;
-import com.foodie.request.RestaurentRequest;
+import com.foodie.request.RestaurantRequest;
+
+import java.util.List;
 
 public interface RestaurantOwnerService {
-	
-    RestaurantOwnerDTO getRestaurantOfUser(String token);
-    RestaurantOwnerDTO updateRestaurantStatus(String token, long restaurantId);
-    List<OrderDTO> getTodayOrders(String token);
-    MenuItemDTO toggleMenuItemAvailability(String token, Long itemId);
-    InventoryDTO getInventoryStatus(String token);
-    
-	public RestaurantOwnerDTO createRestaurent(RestaurentRequest req, String token);
-	RestaurantOwnerDTO updateRestaurantDetails(long id,RestaurentRequest req, String jwt);
-
-
-
+    RestaurantOwnerDTO createRestaurant(RestaurantRequest req, String email);
+    RestaurantOwnerDTO updateRestaurantDetails(Long id, RestaurantRequest req, String email);
+    RestaurantOwnerDTO getRestaurantOfUser(String email);
+    RestaurantOwnerDTO updateRestaurantStatus(String email, Long restaurantId);
+    List<OrderDTO> getTodayOrders(String email);
+    MenuItemDTO toggleMenuItemAvailability(String email, Long itemId);
+    InventoryDTO getInventoryStatus(String email);
 }

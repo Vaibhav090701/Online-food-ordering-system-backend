@@ -8,12 +8,11 @@ import com.foodie.request.MenuItemRequest;
 
 public interface MenuService {
     // Restaurant Owner-only
-    MenuItemDTO createMenuItem(MenuItemRequest request, String token) throws Exception;
-    MenuItemDTO updateMenuItem(String token, Long itemId, MenuItemRequest request)throws Exception;
-    void deleteMenuItem(String token, Long itemId) throws Exception;
-    List<IngredientDTO> getIngredients(String token)throws Exception;
-    IngredientDTO updateIngredientStock(String token, Long ingredientId, int quantity)throws Exception;
-    List<MenuItemDTO> getMenu(Long restaurantId, String jwt);
-
+	MenuItemDTO createMenuItem(String email, MenuItemRequest request);
+    List<MenuItemDTO> getMenu(Long restaurantId, String email);
+    MenuItemDTO updateMenuItem(String email, Long itemId, MenuItemRequest request);
+    void deleteMenuItem(String email, Long itemId);
+    List<IngredientDTO> getIngredients(String email);
+    IngredientDTO updateIngredientStock(String email, Long ingredientId, int quantity);
 
 }

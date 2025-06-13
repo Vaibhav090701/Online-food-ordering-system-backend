@@ -10,6 +10,7 @@ import javax.crypto.SecretKey;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
@@ -24,16 +25,16 @@ public class JwtProvider {
 	
 	private SecretKey key=Keys.hmacShaKeyFor(JwtConstant.SECRET_KEY.getBytes());
 	
-	public String generateToken(Authentication auth)
+	public String generateToken(UserDetails userDetails)
 	{
-		Collection<?extends GrantedAuthority>authorities=auth.getAuthorities();
+		Collection<?extends GrantedAuthority>authorities=userDetails.getAuthorities();
 		String roles=populateAuthorities(authorities);
 		
 		Instant now=Instant.now();
 		
 		String jwt=Jwts.builder().setIssuedAt(Date.from(now))
 				.setExpiration(Date.from(now.plusSeconds(86400)))
-				.claim("email", auth.getName())
+				.claim("email", userDetails.getUsername())
 				.claim("authorities", roles)
 				.signWith(key)
 				.compact();

@@ -1,251 +1,163 @@
 package com.foodie.service;
 
-
-import com.foodie.dto.AddressDTO;
-import com.foodie.dto.IngredientDTO;
-import com.foodie.dto.MenuItemDTO;
-import com.foodie.dto.OrderDTO;
-import com.foodie.dto.OrderItemDTO;
-import com.foodie.dto.UserProfileDTO;
-import com.foodie.model.Address;
-import com.foodie.model.Ingredients;
-import com.foodie.model.MenuItem;
-import com.foodie.model.Order;
-import com.foodie.model.OrderItem;
-import com.foodie.model.OrderStatus;
-import com.foodie.model.Restaurant;
-import com.foodie.model.User;
-import com.foodie.repository.OrderRepository;
-import com.foodie.repository.UserRepository;
-import com.foodie.repository.AddressRepository;
-import com.foodie.repository.MenuItemRepository;
-import com.foodie.repository.RestaurantRepository;
+import com.foodie.dto.*;
+import com.foodie.model.*;
+import com.foodie.repository.*;
 import com.foodie.request.OrderItemRequest;
 import com.foodie.request.OrderRequest;
-import com.foodie.service.OrderService;
-import com.foodie.service.UserServices;
 import com.stripe.exception.StripeException;
-
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class OrderServiceImp implements OrderService {
 
-    @Autowired
-    private OrderRepository orderRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private RestaurantRepository restaurantRepository;
-
-    @Autowired
-    private MenuItemRepository menuItemRepository;
-
-    @Autowired
-    private UserServices userServices;
-    
-    @Autowired
-    private PaymentService paymentService;
-    
-    @Autowired
-    private AddressRepository addressRepository; // Add this
-
+    private final OrderRepository orderRepository;
+    private final RestaurantRepository restaurantRepository;
+    private final MenuItemRepository menuItemRepository;
+    private final UserServices userServices;
+    private final AddressRepository addressRepository;
+    private final PaymentService paymentService;
 
     @Override
-    public OrderDTO placeOrder(String token, OrderRequest request) throws Exception {
-        // Fetch the current user based on the JWT token
-        User user = userServices.findUserByJwtToken(token);
-        
-        // Assume that the restaurant is associated with the user (in case of a customer order)
-        Restaurant restaurant =restaurantRepository.findById(request.getRestaurantId()).orElse(null);
-        if (restaurant == null) {
-            throw new RuntimeException("Restaurant not found for the user.");
-        }
-        
-        // Fetch the address by ID
-        //Later on in frontend we need to give options like Home, Work,etc to find address ID
-        //because one user have multiple address. We need to provide addressId from frontend/
+    @Transactional
+    public OrderDTO placeOrder(String email, OrderRequest request) throws StripeException {
+        User user = validateUser(email);
+        Restaurant restaurant = restaurantRepository.findById(request.getRestaurantId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found"));
         Address deliveryAddress = addressRepository.findById(request.getAddressId())
-                .orElseThrow(() -> new RuntimeException("Address not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Address not found"));
+        if (!deliveryAddress.getUser().equals(user)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Address does not belong to the user");
+        }
 
-        // Create a new order
         Order order = new Order();
         order.setUser(user);
         order.setRestaurant(restaurant);
         order.setOrderDate(LocalDateTime.now());
-        order.setTotalAmount(0.0);  // The total will be calculated based on items
+        order.setTotalAmount(0.0);
         order.setStatus(OrderStatus.PENDING);
         order.setDeliveryAddress(deliveryAddress);
+        order.setPaymentMethod(request.getPaymentMethod());
 
-
-        // Create order items from the request (assuming you have order items in the request)
-        List<OrderItem> orderItems = createOrderItemsFromRequest(request.getOrderItems(), order);
+        List<OrderItem> orderItems = createOrderItemsFromRequest(request.getOrderItems(), order, restaurant);
         order.setItems(orderItems);
+        order.setTotalAmount(calculateTotalAmount(orderItems));
 
-        // Calculate total amount based on the order items
-        double totalAmount = calculateTotalAmount(orderItems);
-        order.setTotalAmount(totalAmount);
-
-        // Save the order
-        orderRepository.save(order);
-
-        // Convert to DTO and return
-        return convertToDTO(order);
+        Order savedOrder = orderRepository.save(order);
+        return convertToDTO(savedOrder);
     }
 
     @Override
-    public OrderDTO getOrderDetails(String token, Long orderId) {
-        User user = null;
-		try {
-			user = userServices.findUserByJwtToken(token);
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        
-        // Fetch the order by ID
+    public OrderDTO getOrderDetails(String email, Long orderId) {
+        User user = validateUser(email);
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
-
-        // Ensure the order belongs to the user
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
         if (!order.getUser().equals(user)) {
-            throw new RuntimeException("This order does not belong to the user");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This order does not belong to the user");
         }
-
-        // Convert to DTO and return
         return convertToDTO(order);
     }
 
     @Override
-    public List<OrderDTO> getOrderHistory(String token) {
-        User user = null;
-		try {
-			user = userServices.findUserByJwtToken(token);
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        
-        // Fetch orders for the user
+    public List<OrderDTO> getOrderHistory(String email) {
+        User user = validateUser(email);
         List<Order> orders = orderRepository.findByUser(user);
-        
-        // Convert list of orders to DTOs and return
-        return orders.stream().map(this::convertToDTO).collect(Collectors.toList());
+        return orders.stream()
+                .map(this::convertToDTO)
+                .toList();
     }
 
     @Override
-    public OrderDTO cancelOrder(String token, Long orderId) {
-        User user = null;
-		try {
-			user = userServices.findUserByJwtToken(token);
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        
-        // Fetch the order by ID
+    @Transactional
+    public OrderDTO cancelOrder(String email, Long orderId) {
+        User user = validateUser(email);
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
-
-        // Ensure the order belongs to the user
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
         if (!order.getUser().equals(user)) {
-            throw new RuntimeException("This order does not belong to the user");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This order does not belong to the user");
+        }
+        if (!OrderStatus.PENDING.equals(order.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only pending orders can be cancelled");
         }
 
-        // Update the order status to CANCELLED
         order.setStatus(OrderStatus.CANCELLED);
-        orderRepository.save(order);
-
-        // Convert to DTO and return
-        return convertToDTO(order);
+        Order savedOrder = orderRepository.save(order);
+        return convertToDTO(savedOrder);
     }
 
     @Override
-    public Page<OrderDTO> getRestaurantOrders(String jwt, String status, int page, int size) {
-        User user = null;
-		try {
-			user = userServices.findUserByJwtToken(jwt);
-	        System.out.println("User fetched: " + user);
+    public Page<OrderDTO> getRestaurantOrders(String email, String status, int page, int size) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = restaurantRepository.findByOwnerAndDeletedFalse(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found for the user"));
 
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        
-        // Fetch the restaurant of the user (assuming user is the restaurant owner)
-        Restaurant restaurant =restaurantRepository.findByOwner(user);
-        
-        // Define pageable object with page number and size
-        Pageable pageable=PageRequest.of(page, size);
-        
-        // If status is provided, filter by status
+        Pageable pageable = PageRequest.of(page, size);
         Page<Order> orders;
-        
+
         if ("ALL".equals(status)) {
-            System.out.println("Fetching all orders for restaurant");
             orders = orderRepository.findByRestaurant(restaurant, pageable);
         } else {
             try {
-
-                OrderStatus orderStatus = OrderStatus.valueOf(status); // Convert string to OrderStatus enum
-                System.out.println("Filtering orders with status: " + orderStatus);
-
+                OrderStatus orderStatus = OrderStatus.valueOf(status);
                 orders = orderRepository.findByRestaurantAndStatus(restaurant, orderStatus, pageable);
             } catch (IllegalArgumentException e) {
-                // If status is not a valid enum, return an empty page or handle accordingly
-                orders = Page.empty(pageable);
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid order status: " + status);
             }
         }
-        System.out.println("Total orders fetched: " + orders.getTotalElements()); // Check if total elements are greater than 0
 
-                
-        // Convert list of orders to DTOs and return
         return orders.map(this::convertToDTO);
-    } 
-
-    @Override
-    public OrderDTO updateOrderStatus(String token, Long orderId, String status) {
-        User user = null;
-		try {
-			user = userServices.findUserByJwtToken(token);
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        
-        // Fetch the order by ID
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
-        
-        Restaurant restaurant =restaurantRepository.findByOwner(user);
-
-        // Ensure the order belongs to the restaurant of the user (assuming the user is a restaurant owner)
-        if (!order.getRestaurant().equals(restaurant)) {
-            throw new RuntimeException("This order does not belong to the restaurant");
-        }
-
-        OrderStatus status1 = OrderStatus.valueOf(status);  // This will throw IllegalArgumentException if the string is invalid
-
-        // Update the order status
-        order.setStatus(status1);
-        orderRepository.save(order);
-
-        // Convert to DTO and return
-        return convertToDTO(order);
     }
 
-    // Helper methods to calculate total amount and convert entities to DTOs
+    @Override
+    @Transactional
+    public OrderDTO updateOrderStatus(String email, Long orderId, String status) {
+        User user = validateAdminUser(email);
+        Restaurant restaurant = restaurantRepository.findByOwnerAndDeletedFalse(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restaurant not found for the user"));
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
+        if (!order.getRestaurant().equals(restaurant)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This order does not belong to the restaurant");
+        }
+
+        try {
+            OrderStatus orderStatus = OrderStatus.valueOf(status);
+            order.setStatus(orderStatus);
+            Order savedOrder = orderRepository.save(order);
+            return convertToDTO(savedOrder);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid order status: " + status);
+        }
+    }
+
+    private User validateUser(String email) {
+        User user = userServices.findUserByEmail(email);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+        return user;
+    }
+
+    private User validateAdminUser(String email) {
+        User user = userServices.findUserByEmail(email);
+        if (user == null || !user.getRole().equals(Role.ROLE_ADMIN)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Unauthorized: User is not an admin");
+        }
+        return user;
+    }
 
     private double calculateTotalAmount(List<OrderItem> orderItems) {
         return orderItems.stream()
@@ -259,29 +171,25 @@ public class OrderServiceImp implements OrderService {
         orderDTO.setOrderDate(order.getOrderDate());
         orderDTO.setTotalAmount(order.getTotalAmount());
         orderDTO.setStatus(order.getStatus());
-		try {
-			orderDTO.setPaymentResponse(paymentService.createPaymentLink(order));
-		} catch (StripeException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
+        orderDTO.setPaymentMethod(order.getPaymentMethod());
+        orderDTO.setPaymentStatus(order.getPaymentStatus());
         orderDTO.setItems(order.getItems().stream()
                 .map(this::convertToOrderItemDTO)
-                .collect(Collectors.toList()));
-        Address address=order.getDeliveryAddress();
-        AddressDTO addressDTO=new AddressDTO();
-        addressDTO.setCity(address.getCity());
-        addressDTO.setId(address.getId());
-        addressDTO.setLandmark(address.getLandmark());
-        addressDTO.setState(address.getState());
-        addressDTO.setStreetAddress(address.getStreet());
-        addressDTO.setZipCode(address.getZipCode());
-        
+                .toList());
+        orderDTO.setDeliveryAddress(convertToAddressDTO(order.getDeliveryAddress()));
         orderDTO.setUserProfileDTO(convertToUserProfileDTO(order.getUser()));
-        
-        orderDTO.setDeliveryAddress(addressDTO);
         return orderDTO;
+    }
+
+    private AddressDTO convertToAddressDTO(Address address) {
+        AddressDTO addressDTO = new AddressDTO();
+        addressDTO.setId(address.getId());
+        addressDTO.setStreetAddress(address.getStreet());
+        addressDTO.setCity(address.getCity());
+        addressDTO.setState(address.getState());
+        addressDTO.setZipCode(address.getZipCode());
+        addressDTO.setLandmark(address.getLandmark());
+        return addressDTO;
     }
 
     private OrderItemDTO convertToOrderItemDTO(OrderItem orderItem) {
@@ -292,19 +200,16 @@ public class OrderServiceImp implements OrderService {
         dto.setPrice(orderItem.getPrice());
         return dto;
     }
-    
+
     private UserProfileDTO convertToUserProfileDTO(User user) {
-    	
         UserProfileDTO userProfileDTO = new UserProfileDTO();
         userProfileDTO.setId(user.getId());
         userProfileDTO.setEmail(user.getEmail());
         userProfileDTO.setName(user.getUsername());
         userProfileDTO.setRole(user.getRole());
-        
         return userProfileDTO;
     }
-    
-    // Helper methods to convert entities to DTOs
+
     private MenuItemDTO convertToMenuItemDTO(MenuItem menuItem) {
         MenuItemDTO dto = new MenuItemDTO();
         dto.setId(menuItem.getId());
@@ -313,39 +218,40 @@ public class OrderServiceImp implements OrderService {
         dto.setPrice(menuItem.getPrice());
         dto.setAvailable(menuItem.isAvailable());
         dto.setImages(menuItem.getImages());
-        List<IngredientDTO>dtos=new ArrayList<IngredientDTO>();
-        for(Ingredients ingredients:menuItem.getIngredients()) {
-        	IngredientDTO dto1=new IngredientDTO();
-        	dto1.setDescription(ingredients.getDescription());
-        	dto1.setName(ingredients.getName());
-        	dto1.setId(ingredients.getId());
-        	dto1.setQuantityInStock(ingredients.getQuantityInStock());
-        	dto1.setUnit(ingredients.getUnit());
-        	
-        	dtos.add(dto1);
-        }
-        
-        dto.setIngredients(dtos);
+        List<IngredientDTO> ingredientDTOs = menuItem.getIngredients().stream()
+                .map(this::convertToIngredientDTO)
+                .toList();
+        dto.setIngredients(ingredientDTOs);
         return dto;
     }
 
+    private IngredientDTO convertToIngredientDTO(Ingredients ingredient) {
+        IngredientDTO dto = new IngredientDTO();
+        dto.setId(ingredient.getId());
+        dto.setName(ingredient.getName());
+        dto.setQuantityInStock(ingredient.getQuantityInStock());
+        dto.setUnit(ingredient.getUnit());
+        dto.setPrice(ingredient.getPrice());
+        return dto;
+    }
 
-
-    private List<OrderItem> createOrderItemsFromRequest(List<OrderItemRequest> orderItemRequests, Order order) {
+    private List<OrderItem> createOrderItemsFromRequest(List<OrderItemRequest> orderItemRequests, Order order, Restaurant restaurant) {
         return orderItemRequests.stream().map(itemRequest -> {
-            // Fetch the menu item based on the ID
             MenuItem menuItem = menuItemRepository.findById(itemRequest.getMenuItemId())
-                    .orElseThrow(() -> new RuntimeException("Menu item not found"));
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Menu item not found"));
+            if (!menuItem.getRestaurant().equals(restaurant)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Menu item does not belong to the specified restaurant");
+            }
+            if (!menuItem.isAvailable()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Menu item is not available");
+            }
 
-            // Create and populate OrderItem entity
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(order);
             orderItem.setMenuItem(menuItem);
             orderItem.setQuantity(itemRequest.getQuantity());
-            orderItem.setPrice(menuItem.getPrice());  // Assuming MenuItem has a price field
-
+            orderItem.setPrice(menuItem.getPrice());
             return orderItem;
-        }).collect(Collectors.toList());
+        }).toList();
     }
-
 }

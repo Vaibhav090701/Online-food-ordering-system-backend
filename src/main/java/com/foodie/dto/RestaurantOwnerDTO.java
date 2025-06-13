@@ -13,6 +13,10 @@ public class RestaurantOwnerDTO {
     private String email;
     private String twitter;
     private String instagram;
+    private String city;
+    private boolean deleted;
+    private String restaurantCategory;
+    private String cuisineType;
     private boolean status;
     private String description;
     private List<String>images;

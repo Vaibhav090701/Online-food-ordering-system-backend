@@ -1,30 +1,24 @@
 package com.foodie.model;
 
-import java.util.Date;
-
-import com.fasterxml.jackson.annotation.JsonBackReference;
-
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.ManyToOne;
+import jakarta.persistence.*;
 import lombok.Data;
+
+import java.time.LocalDateTime;
 
 @Entity
 @Data
 public class Event {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-	@Id
-	@GeneratedValue(strategy = GenerationType.AUTO)
-	private long eventId;
-	private String imageUrl;
-	private String location;
-	private String eventName;
-	private Date startDate;
-	private Date endDate;
-	
-	@ManyToOne
-	private Restaurant restaurant;
+    private String eventName;
+    private LocalDateTime startDate;
+    private LocalDateTime endDate;
+    private String location;
+    private String imageUrl;
+    private boolean deleted;
 
+    @ManyToOne
+    private Restaurant restaurant;
 }

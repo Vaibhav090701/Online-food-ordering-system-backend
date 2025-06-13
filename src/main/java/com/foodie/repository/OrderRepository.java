@@ -29,5 +29,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Page<Order> findByRestaurantAndStatus(Restaurant restaurant, OrderStatus status, Pageable pageable); // Pagination with filter by status
 
     Page<Order> findByRestaurant(Restaurant restaurant, Pageable pageable); // Pagination without filter
+    
+    @Query("SELECT o FROM Order o WHERE o.restaurant = :restaurant AND o.orderDate BETWEEN :start AND :end AND o.deleted = false")
+    List<Order> findByRestaurantAndOrderDateBetweenAndDeletedFalse(Restaurant restaurant, LocalDateTime start, LocalDateTime end);
 
 }

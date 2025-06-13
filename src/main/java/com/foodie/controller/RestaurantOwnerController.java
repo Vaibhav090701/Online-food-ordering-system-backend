@@ -1,197 +1,310 @@
 package com.foodie.controller;
 
+import com.foodie.dto.ApiResponse;
 import com.foodie.dto.EventDTO;
 import com.foodie.dto.InventoryDTO;
 import com.foodie.dto.MenuItemDTO;
 import com.foodie.dto.OrderDTO;
 import com.foodie.dto.RestaurantOwnerDTO;
-import com.foodie.model.OrderStatus;
-import com.foodie.model.User;
 import com.foodie.request.CreateEventRequest;
-import com.foodie.request.RestaurentRequest;
+import com.foodie.request.RestaurantRequest;
 import com.foodie.service.EventService;
 import com.foodie.service.MenuService;
 import com.foodie.service.OrderService;
 import com.foodie.service.RestaurantOwnerService;
-import com.foodie.service.RestaurantService;
-import com.foodie.service.UserServices;
-
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.CurrentSecurityContext;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/admin/restaurant")
+@RequestMapping("/admin/restaurant")
+@RequiredArgsConstructor
 public class RestaurantOwnerController {
 
-    @Autowired
-    private RestaurantOwnerService restaurantOwnerService;
-    
-    @Autowired
-    private RestaurantService restaurantService;
-    
-    @Autowired
-    private OrderService orderService;
-    
-    @Autowired
-    private MenuService menuService;
-    
-    @Autowired
-    private EventService eventService;
-        
-	@PostMapping()
-	public ResponseEntity<RestaurantOwnerDTO> createRestaurent(@RequestBody RestaurentRequest req,@RequestHeader("Authorization")String jwt) throws Exception
-	{
-		RestaurantOwnerDTO dto= restaurantOwnerService.createRestaurent(req, jwt);
-		return new ResponseEntity<>(dto, HttpStatus.CREATED);	
-	}
-	
-	@PutMapping("/{id}")
-	public ResponseEntity<RestaurantOwnerDTO> updateRestaurantDetails(@PathVariable long id, @RequestBody RestaurentRequest req,@RequestHeader("Authorization")String jwt) throws Exception
-	{
-		RestaurantOwnerDTO dto= restaurantOwnerService.updateRestaurantDetails(id,req,jwt);
-		return new ResponseEntity<>(dto, HttpStatus.OK);	
-	}
-	
+    private final RestaurantOwnerService restaurantOwnerService;
+    private final OrderService orderService;
+    private final MenuService menuService;
+    private final EventService eventService;
 
-    // Get restaurant dashboard
+    // Create a new restaurant
+    @PostMapping
+    public ResponseEntity<ApiResponse<RestaurantOwnerDTO>> createRestaurant(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @Valid @RequestBody RestaurantRequest req) {
+        try {
+            RestaurantOwnerDTO dto = restaurantOwnerService.createRestaurant(req, email);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new ApiResponse<>(dto, "Restaurant created successfully", HttpStatus.CREATED.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
+
+    // Update restaurant details
+    @PutMapping("/{id}")
+    public ResponseEntity<ApiResponse<RestaurantOwnerDTO>> updateRestaurantDetails(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @PathVariable Long id,
+            @Valid @RequestBody RestaurantRequest req) {
+        try {
+            RestaurantOwnerDTO dto = restaurantOwnerService.updateRestaurantDetails(id, req, email);
+            return ResponseEntity.ok(new ApiResponse<>(dto, "Restaurant updated successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
+
+    // Get restaurant for the authenticated user
     @GetMapping("/user")
-    public ResponseEntity<RestaurantOwnerDTO> getUserRestaurant(@RequestHeader("Authorization") String token) {
-        RestaurantOwnerDTO dto = restaurantOwnerService.getRestaurantOfUser(token);
-        return new ResponseEntity<>(dto, HttpStatus.OK);
+    public ResponseEntity<ApiResponse<RestaurantOwnerDTO>> getUserRestaurant(
+            @CurrentSecurityContext(expression = "authentication?.name") String email) {
+        try {
+            RestaurantOwnerDTO dto = restaurantOwnerService.getRestaurantOfUser(email);
+            return ResponseEntity.ok(new ApiResponse<>(dto, "Restaurant retrieved successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
     }
 
     // Update restaurant status (Active/Inactive)
     @PutMapping("/{restaurantId}/status")
-    public ResponseEntity<RestaurantOwnerDTO> updateRestaurantStatus(
-            @RequestHeader("Authorization") String token,
-            @PathVariable long restaurantId) {
-        RestaurantOwnerDTO updatedRestaurant = restaurantOwnerService.updateRestaurantStatus(token, restaurantId);
-        return new ResponseEntity<>(updatedRestaurant, HttpStatus.OK);
+    public ResponseEntity<ApiResponse<RestaurantOwnerDTO>> updateRestaurantStatus(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @PathVariable Long restaurantId) {
+        try {
+            RestaurantOwnerDTO updatedRestaurant = restaurantOwnerService.updateRestaurantStatus(email, restaurantId);
+            return ResponseEntity.ok(new ApiResponse<>(updatedRestaurant, "Restaurant status updated successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
     }
 
     // Get orders for today
     @GetMapping("/orders/today")
-    public ResponseEntity<List<OrderDTO>> getTodayOrders(@RequestHeader("Authorization") String token) {
-        List<OrderDTO> orders = restaurantOwnerService.getTodayOrders(token);
-        return new ResponseEntity<>(orders, HttpStatus.OK);
+    public ResponseEntity<ApiResponse<List<OrderDTO>>> getTodayOrders(
+            @CurrentSecurityContext(expression = "authentication?.name") String email) {
+        try {
+            List<OrderDTO> orders = restaurantOwnerService.getTodayOrders(email);
+            return ResponseEntity.ok(new ApiResponse<>(orders, "Today's orders retrieved successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
     }
 
-    // Toggle availability of a menu item
+    // Toggle menu item availability
     @PutMapping("/menu/{itemId}/availability")
-    public ResponseEntity<MenuItemDTO> toggleMenuItemAvailability(
-            @RequestHeader("Authorization") String token,
+    public ResponseEntity<ApiResponse<MenuItemDTO>> toggleMenuItemAvailability(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
             @PathVariable Long itemId) {
-        MenuItemDTO menuItemDTO = restaurantOwnerService.toggleMenuItemAvailability(token, itemId);
-        return new ResponseEntity<>(menuItemDTO, HttpStatus.OK);
+        try {
+            MenuItemDTO menuItemDTO = restaurantOwnerService.toggleMenuItemAvailability(email, itemId);
+            return ResponseEntity.ok(new ApiResponse<>(menuItemDTO, "Menu item availability updated successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
     }
 
     // Get inventory status
     @GetMapping("/inventory")
-    public ResponseEntity<InventoryDTO> getInventoryStatus(@RequestHeader("Authorization") String token) {
-        InventoryDTO inventoryDTO = restaurantOwnerService.getInventoryStatus(token);
-        return new ResponseEntity<>(inventoryDTO, HttpStatus.OK);
+    public ResponseEntity<ApiResponse<InventoryDTO>> getInventoryStatus(
+            @CurrentSecurityContext(expression = "authentication?.name") String email) {
+        try {
+            InventoryDTO inventoryDTO = restaurantOwnerService.getInventoryStatus(email);
+            return ResponseEntity.ok(new ApiResponse<>(inventoryDTO, "Inventory status retrieved successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
     }
-    
-    // Get restaurant orders (Restaurant owner-only)
-	    @GetMapping("/orders")
-	    public ResponseEntity<Page<OrderDTO>> getRestaurantOrders(
-	            @RequestHeader("Authorization") String token,
-	            @RequestParam(value = "status", defaultValue = "ALL") String status,  // Filter by status (default is "ALL")
-	            @RequestParam(value = "page", defaultValue = "0") int page,  // Pagination page number (default is page 0)
-	            @RequestParam(value = "size", defaultValue = "10") int size  // Pagination size (default is 10)
-	            ) {
-	    	System.out.println("Status- "+status);
-	        Page<OrderDTO> restaurantOrders = orderService.getRestaurantOrders(token, status, page, size);
-	        return new ResponseEntity<>(restaurantOrders, HttpStatus.OK);
-	    }
 
-    // Update order status (Restaurant owner-only)
+    // Get restaurant orders with pagination and status filter
+    @GetMapping("/orders")
+    public ResponseEntity<ApiResponse<Page<OrderDTO>>> getRestaurantOrders(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @RequestParam(value = "status", defaultValue = "ALL") String status,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size) {
+        try {
+            Page<OrderDTO> restaurantOrders = orderService.getRestaurantOrders(email, status, page, size);
+            return ResponseEntity.ok(new ApiResponse<>(restaurantOrders, "Restaurant orders retrieved successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
+
+    // Update order status
     @PutMapping("/status/{orderId}")
-    public ResponseEntity<OrderDTO> updateOrderStatus(
-            @RequestHeader("Authorization") String token,
+    public ResponseEntity<ApiResponse<OrderDTO>> updateOrderStatus(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
             @PathVariable Long orderId,
             @RequestParam String status) {
-        OrderDTO orderDTO = orderService.updateOrderStatus(token, orderId, status);
-        return new ResponseEntity<>(orderDTO, HttpStatus.OK);
+        try {
+            OrderDTO orderDTO = orderService.updateOrderStatus(email, orderId, status);
+            return ResponseEntity.ok(new ApiResponse<>(orderDTO, "Order status updated successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
     }
-    
-    // Get restaurant details by ID
-    @GetMapping("/{restaurantId}")
-    public ResponseEntity<RestaurantOwnerDTO> getRestaurantDetails(@PathVariable Long restaurantId) {
-        RestaurantOwnerDTO restaurantDTO = restaurantService.getRestaurantDetails(restaurantId);
-        return new ResponseEntity<>(restaurantDTO, HttpStatus.OK);
-    }
-    
+
+    // Get restaurant menu
     @GetMapping("/{id}/menu")
-    public ResponseEntity<List<MenuItemDTO>> getRestaurantMenu(
-            @RequestHeader("Authorization") String token,
-            @PathVariable Long id
-            ) throws Exception {
-        List<MenuItemDTO> menuItemDTO = menuService.getMenu(id, token);
-        return new ResponseEntity<>(menuItemDTO, HttpStatus.OK);
+    public ResponseEntity<ApiResponse<List<MenuItemDTO>>> getRestaurantMenu(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @PathVariable Long id) {
+        try {
+            List<MenuItemDTO> menuItems = menuService.getMenu(id, email);
+            return ResponseEntity.ok(new ApiResponse<>(menuItems, "Menu items retrieved successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
     }
-    
-	@GetMapping("/event")
-	public ResponseEntity<List<EventDTO>> getAllEvents(@RequestHeader("Authorization") String jwt) throws Exception{
-		
-		List<EventDTO>events=eventService.getAllEvents();
-		
-		return new ResponseEntity<>(events, HttpStatus.OK);
-		
-	}
-	
-	@PostMapping("/event")
-	public ResponseEntity<EventDTO> createEvent(@RequestBody CreateEventRequest eventRequest,  @RequestHeader("Authorization")String jwt) throws Exception{
-		
-		EventDTO events=eventService.createEvent(eventRequest);
-		
-		return new ResponseEntity<>(events, HttpStatus.OK);
-	}
-	
-	@GetMapping("/event/{restaurentId}/restaurent")
-	public ResponseEntity<List<EventDTO>> getRestaurentEvents(@PathVariable long restaurentId,  @RequestHeader("Authorization")String jwt) throws Exception
-	{
 
-		List<EventDTO>events=eventService.getRestaurentEvents(restaurentId);
-		
-		return new ResponseEntity<>(events, HttpStatus.OK);
-		
-	}
-	
-	@DeleteMapping("/event/{eventId}/delete")
-	public ResponseEntity<?> deleteEvenetById(@PathVariable long eventId,  @RequestHeader("Authorization")String jwt) throws Exception
-	{
-		String message=eventService.deleteEvent(eventId);	
-		return new ResponseEntity<>(message, HttpStatus.OK);
-	}
-	
-	
-	@PutMapping("/event/{restaurentId}/update/{eventId}")
-	public ResponseEntity<EventDTO> updateEvent(@PathVariable long eventId, @PathVariable long restaurentId, @RequestBody EventDTO eventDTO,  @RequestHeader("Authorization")String jwt) throws Exception{
-		EventDTO updatedEvent=eventService.updateEvent(eventId, eventDTO, restaurentId);
-		
-	    if (updatedEvent != null) {
-	        return new ResponseEntity<>(updatedEvent, HttpStatus.OK);  // Return updated event
-	    } else {
-	        return new ResponseEntity<>(HttpStatus.NOT_FOUND);  // Event not found
-	    }
+    // Get all events
+    @GetMapping("/events")
+    public ResponseEntity<ApiResponse<List<EventDTO>>> getAllEvents(
+            @CurrentSecurityContext(expression = "authentication?.name") String email) {
+        try {
+            List<EventDTO> events = eventService.getAllEvents();
+            return ResponseEntity.ok(new ApiResponse<>(events, "Events retrieved successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
 
-	}
-	
-	@GetMapping("/event/{eventId}")
-	public ResponseEntity<EventDTO>getEventById(@PathVariable long eventId, @RequestHeader("Authorization")String jwt ) throws Exception
-	{		
-		EventDTO events=eventService.findEventById(eventId);
-	    if (events != null) {
-	        return new ResponseEntity<>(events, HttpStatus.OK);  
-	    } else {
-	        return new ResponseEntity<>(HttpStatus.NOT_FOUND);  
-	    }     
-	}
+    // Create an event
+    @PostMapping("/event")
+    public ResponseEntity<ApiResponse<EventDTO>> createEvent(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @Valid @RequestBody CreateEventRequest eventRequest) {
+        try {
+            EventDTO event = eventService.createEvent(eventRequest, email);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new ApiResponse<>(event, "Event created successfully", HttpStatus.CREATED.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
 
+    // Get restaurant events
+    @GetMapping("/events/{restaurantId}/restaurant")
+    public ResponseEntity<ApiResponse<List<EventDTO>>> getRestaurantEvents(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @PathVariable Long restaurantId) {
+        try {
+            List<EventDTO> events = eventService.getRestaurantEvents(restaurantId);
+            return ResponseEntity.ok(new ApiResponse<>(events, "Restaurant events retrieved successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
+
+    // Delete an event
+    @DeleteMapping("/event/{eventId}")
+    public ResponseEntity<ApiResponse<String>> deleteEventById(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @PathVariable Long eventId) {
+        try {
+            String message = eventService.deleteEvent(eventId, email);
+            return ResponseEntity.ok(new ApiResponse<>(message, "Event deleted successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
+
+    // Update an event
+    @PutMapping("/event/{eventId}")
+    public ResponseEntity<ApiResponse<EventDTO>> updateEvent(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @PathVariable Long eventId,
+            @Valid @RequestBody EventDTO eventDTO) {
+        try {
+            EventDTO updatedEvent = eventService.updateEvent(eventId, eventDTO, email);
+            return ResponseEntity.ok(new ApiResponse<>(updatedEvent, "Event updated successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
+
+    // Get event by ID
+    @GetMapping("/event/{eventId}")
+    public ResponseEntity<ApiResponse<EventDTO>> getEventById(
+            @CurrentSecurityContext(expression = "authentication?.name") String email,
+            @PathVariable Long eventId) {
+        try {
+            EventDTO event = eventService.findEventById(eventId);
+            return ResponseEntity.ok(new ApiResponse<>(event, "Event retrieved successfully", HttpStatus.OK.value()));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(new ApiResponse<>(e.getReason(), e.getStatusCode().value()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        }
+    }
 }

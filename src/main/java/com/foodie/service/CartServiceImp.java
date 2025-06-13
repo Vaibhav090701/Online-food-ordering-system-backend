@@ -1,86 +1,74 @@
 package com.foodie.service;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import com.foodie.dto.CartDTO;
 import com.foodie.dto.CartItemDTO;
 import com.foodie.dto.IngredientDTO;
+import com.foodie.dto.MenuCategoryDTO;
 import com.foodie.dto.MenuItemDTO;
-import com.foodie.dto.UserProfileDTO;
 import com.foodie.model.Cart;
 import com.foodie.model.CartItem;
 import com.foodie.model.Ingredients;
+import com.foodie.model.MenuCategory;
 import com.foodie.model.MenuItem;
+import com.foodie.model.Restaurant;
 import com.foodie.model.User;
 import com.foodie.repository.CartRepository;
+import com.foodie.repository.IngredientRepository;
 import com.foodie.repository.MenuItemRepository;
-import com.foodie.repository.UserRepository;
 import com.foodie.request.CartItemRequest;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class CartServiceImp implements CartService {
 
-    @Autowired
-    private CartRepository cartRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-    
-    @Autowired
-    private UserServices userServices;
-
-    @Autowired
-    private MenuItemRepository menuItemRepository;
+    private final CartRepository cartRepository;
+    private final UserServices userServices;
+    private final MenuItemRepository menuItemRepository;
+    private final IngredientRepository ingredientRepository;
 
     @Override
-    public CartDTO getCart(String token) throws Exception {
-        // Retrieve the logged-in user from the token
-    	User user=userServices.findUserByJwtToken(token);
-
-        // Get the user's cart
-        Cart cart = cartRepository.findByUser(user).orElseThrow(() -> new RuntimeException("Cart not found"));
-
+    public CartDTO getCart(String email) throws Exception {
+        User user = userServices.findUserByEmail(email);
+        Cart cart = cartRepository.findByUser(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
         return convertToDTO(cart);
     }
 
     @Override
-    public CartDTO addToCart(String token, CartItemRequest request) throws Exception {
-        // Retrieve the logged-in user from the token
-    	User user=userServices.findUserByJwtToken(token);
-
-        // Get the menu item
+    @Transactional
+    public CartDTO addToCart(String email, CartItemRequest request) throws Exception {
+        User user = userServices.findUserByEmail(email);
         MenuItem menuItem = menuItemRepository.findById(request.getMenuItemId())
-                .orElseThrow(() -> new RuntimeException("Menu item not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Menu item not found"));
 
-        // Get or create a cart
         Cart cart = cartRepository.findByUser(user).orElseGet(() -> {
             Cart newCart = new Cart();
             newCart.setUser(user);
             return cartRepository.save(newCart);
         });
-        
-		//to check the food is already present in the cart or not is it is present then just update the quantity
-		for(CartItem cartItem:cart.getItems())
-		{
-			if(cartItem.getMenuItem().equals(menuItem))
-			{
-				int newQuantity=cartItem.getQuantity()+request.getQuantity();
-				return updateCartItem(token, cartItem.getId(), newQuantity);
-			}
-		}
 
-        // Add the item to the cart
+        // Check if the item is already in the cart
+        for (CartItem cartItem : cart.getItems()) {
+            if (cartItem.getMenuItem().equals(menuItem)) {
+                int newQuantity = cartItem.getQuantity() + request.getQuantity();
+                return updateCartItem(email, cartItem.getId(), newQuantity);
+            }
+        }
+
+        // Add new item to cart
         CartItem cartItem = new CartItem();
         cartItem.setCart(cart);
         cartItem.setMenuItem(menuItem);
         cartItem.setQuantity(request.getQuantity());
-        cartItem.setPrice(menuItem.getPrice());
-        // Handle the ingredients list: if null or empty, set it to an empty list
+        cartItem.setPrice(menuItem.getPrice() * request.getQuantity());
         List<String> ingredients = (request.getIngredients() == null || request.getIngredients().isEmpty())
                 ? new ArrayList<>()
                 : request.getIngredients();
@@ -93,39 +81,40 @@ public class CartServiceImp implements CartService {
     }
 
     @Override
-    public CartDTO updateCartItem(String token, Long itemId, int quantity) throws Exception {
-    	User user=userServices.findUserByJwtToken(token);
+    @Transactional
+    public CartDTO updateCartItem(String email, Long itemId, int quantity) throws Exception {
+        if (quantity <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be greater than 0");
+        }
 
-        Cart cart = cartRepository.findByUser(user).orElseThrow(() -> new RuntimeException("Cart not found"));
+        User user = userServices.findUserByEmail(email);
+        Cart cart = cartRepository.findByUser(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
 
         CartItem cartItem = cart.getItems().stream()
                 .filter(item -> item.getId().equals(itemId))
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("Cart item not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart item not found"));
 
         double menuItemPrice = cartItem.getMenuItem().getPrice();
-
-        // Calculate the updated price based on the new quantity
-        double updatedPrice = menuItemPrice * quantity;
-
         cartItem.setQuantity(quantity);
-        cartItem.setPrice(updatedPrice);  
-        
-        cartRepository.save(cart);
+        cartItem.setPrice(menuItemPrice * quantity);
 
+        cartRepository.save(cart);
         return convertToDTO(cart);
     }
 
     @Override
-    public CartDTO removeCartItem(String token, Long itemId) throws Exception {
-    	User user=userServices.findUserByJwtToken(token);
-
-        Cart cart = cartRepository.findByUser(user).orElseThrow(() -> new RuntimeException("Cart not found"));
+    @Transactional
+    public CartDTO removeCartItem(String email, Long itemId) throws Exception {
+        User user = userServices.findUserByEmail(email);
+        Cart cart = cartRepository.findByUser(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
 
         CartItem cartItem = cart.getItems().stream()
                 .filter(item -> item.getId().equals(itemId))
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("Cart item not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart item not found"));
 
         cart.getItems().remove(cartItem);
         cartRepository.save(cart);
@@ -134,54 +123,79 @@ public class CartServiceImp implements CartService {
     }
 
     @Override
-    public void clearCart(String token) throws Exception {
-    	User user=userServices.findUserByJwtToken(token);
-
-        Cart cart = cartRepository.findByUser(user).orElseThrow(() -> new RuntimeException("Cart not found"));
+    @Transactional
+    public void clearCart(String email) throws Exception {
+        User user = userServices.findUserByEmail(email);
+        Cart cart = cartRepository.findByUser(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
 
         cart.getItems().clear();
         cartRepository.save(cart);
     }
 
     @Override
-    public CartDTO applyCoupon(String token, String couponCode) throws Exception {
-        // You can implement the logic to apply the coupon here.
-        // For now, we assume there's no actual coupon functionality implemented.
+    @Transactional
+    public CartDTO applyCoupon(String email, String couponCode) throws Exception {
+        User user = userServices.findUserByEmail(email);
+        Cart cart = cartRepository.findByUser(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
 
-    	User user=userServices.findUserByJwtToken(token);
+        // TODO: Implement coupon logic (e.g., validate couponCode, apply discount)
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Coupon functionality not implemented yet");
 
-        Cart cart = cartRepository.findByUser(user).orElseThrow(() -> new RuntimeException("Cart not found"));
+        // Example placeholder for future implementation:
+        /*
+        Coupon coupon = couponRepository.findByCode(couponCode)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid coupon code"));
+        if (!coupon.isValid()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Coupon is expired or invalid");
+        }
+        cart.setDiscount(coupon.getDiscountAmount());
+        cartRepository.save(cart);
+        */
 
-        // Apply the coupon logic here
-
-        return convertToDTO(cart);
+        // return convertToDTO(cart);
     }
 
-    // Helper method to convert Cart to CartDTO
     private CartDTO convertToDTO(Cart cart) {
         CartDTO cartDTO = new CartDTO();
         cartDTO.setId(cart.getId());
         cartDTO.setTotalPrice(cart.getItems().stream().mapToDouble(CartItem::getPrice).sum());
 
-        // Convert CartItems to CartItemDTO
         List<CartItemDTO> cartItemDTOs = cart.getItems().stream().map(item -> {
             CartItemDTO dto = new CartItemDTO();
+            Restaurant restaurant = item.getMenuItem().getRestaurant();
+            List<Ingredients> restaurantIngredients = ingredientRepository.findByRestaurantAndDeletedFalse(restaurant);
+            List<String> selectedIngredientNames = item.getIngredients();
+            List<IngredientDTO> ingredientDTOs = restaurantIngredients.stream()
+                    .filter(ingredient -> selectedIngredientNames.contains(ingredient.getName()))
+                    .map(this::convertToIngredientDTO)
+                    .toList();
+            dto.setIngredients(ingredientDTOs);
             dto.setMenuItemDto(convertToMenuItemDTO(item.getMenuItem()));
             dto.setName(item.getMenuItem().getName());
             dto.setQuantity(item.getQuantity());
             dto.setPrice(item.getPrice());
-            dto.setIngredients(item.getIngredients());
             dto.setId(item.getId());
             dto.setRestaurantId(item.getMenuItem().getRestaurant().getId());
-           
             return dto;
         }).toList();
 
         cartDTO.setItems(cartItemDTOs);
         return cartDTO;
     }
-    
-    // Helper methods to convert entities to DTOs
+
+    private IngredientDTO convertToIngredientDTO(Ingredients ingredient) {
+        IngredientDTO dto = new IngredientDTO();
+        dto.setId(ingredient.getId());
+        dto.setName(ingredient.getName());
+        dto.setQuantityInStock(ingredient.getQuantityInStock());
+        dto.setUnit(ingredient.getUnit());
+        dto.setPrice(ingredient.getPrice());
+        dto.setDeleted(ingredient.isDeleted());
+        return dto;
+    }
+
     private MenuItemDTO convertToMenuItemDTO(MenuItem menuItem) {
         MenuItemDTO dto = new MenuItemDTO();
         dto.setId(menuItem.getId());
@@ -189,21 +203,24 @@ public class CartServiceImp implements CartService {
         dto.setDescription(menuItem.getDescription());
         dto.setPrice(menuItem.getPrice());
         dto.setAvailable(menuItem.isAvailable());
+        dto.setVegetarian(menuItem.isVegetarian());
         dto.setImages(menuItem.getImages());
-        List<IngredientDTO>dtos=new ArrayList<IngredientDTO>();
-        for(Ingredients ingredients:menuItem.getIngredients()) {
-        	IngredientDTO dto1=new IngredientDTO();
-        	dto1.setDescription(ingredients.getDescription());
-        	dto1.setName(ingredients.getName());
-        	dto1.setId(ingredients.getId());
-        	dto1.setQuantityInStock(ingredients.getQuantityInStock());
-        	dto1.setUnit(ingredients.getUnit());
-        	
-        	dtos.add(dto1);
-        }
-        
+        dto.setCategory(convertToMenuCategoryDTO(menuItem.getMenuCategory()));
+        dto.setTemplateType(menuItem.getTemplateType());
+        List<IngredientDTO> dtos = menuItem.getIngredients().stream()
+                .map(this::convertToIngredientDTO)
+                .toList();
         dto.setIngredients(dtos);
         return dto;
     }
 
+    public MenuCategoryDTO convertToMenuCategoryDTO(MenuCategory menuCategory) {
+        MenuCategoryDTO dto = new MenuCategoryDTO();
+        dto.setCategoryDescription(menuCategory.getCategoryDescription());
+        dto.setCategoryImage(menuCategory.getCategoryImages());
+        dto.setCategoryName(menuCategory.getCategoryName());
+        dto.setId(menuCategory.getId());
+        dto.setDeleted(menuCategory.isDeleted());
+        return dto;
+    }
 }

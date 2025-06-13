@@ -1,17 +1,17 @@
 package com.foodie.dto;
 
-import java.util.Date;
-
 import lombok.Data;
+
+import java.time.LocalDateTime;
 
 @Data
 public class EventDTO {
-	
-	private String imageUrl;
-	private String location;
-	private String eventName;
-	private Date startDate;
-	private Date endDate;
-	private long restaurentId;
-
+    private Long id;
+    private String eventName;
+    private LocalDateTime startDate;
+    private LocalDateTime endDate;
+    private String location;
+    private String imageUrl;
+    private Long restaurantId;
+    private boolean deleted;
 }

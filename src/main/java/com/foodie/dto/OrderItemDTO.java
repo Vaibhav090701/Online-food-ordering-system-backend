@@ -11,6 +11,7 @@ public class OrderItemDTO {
     private int quantity;
     private double price;
     private List<String>images;
+    private boolean deleted;
 
 
 }

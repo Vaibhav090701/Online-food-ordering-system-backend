@@ -34,6 +34,12 @@ public class Order {
     
     private LocalDateTime orderDate;
     private double totalAmount;
+    private boolean deleted;
+    
+    @Enumerated(EnumType.STRING)
+    private PaymentStatus paymentStatus;
+
+    private String paymentMethod;
     
     @Enumerated(EnumType.STRING)
     private OrderStatus status;

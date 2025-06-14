@@ -1,6 +1,7 @@
 package com.foodie.controller;
 
 import com.foodie.Config.JwtProvider;
+import com.foodie.Config.JwtUtil;
 import com.foodie.dto.ApiResponse;
 import com.foodie.dto.AuthResponse;
 import com.foodie.dto.UserProfileDTO;
@@ -34,6 +35,8 @@ public class AuthController {
     private final UserServices userService;
     private final TokenBlacklistService blacklistService;
     private final JwtProvider jwtProvider;
+    
+    private final JwtUtil jwtUtil;
 
     @PostMapping("/signin")
     public ResponseEntity<ApiResponse<AuthResponse>> signin(@Valid @RequestBody LoginRequest req) {
@@ -45,7 +48,7 @@ public class AuthController {
 
             // Load user details and generate JWT
             UserDetails userDetails = userDetailsService.loadUserByUsername(req.getEmail());
-            String jwtToken = jwtProvider.generateToken(userDetails);
+            String jwtToken = jwtUtil.generateToken(userDetails);
 
             // Create HTTP-only cookie for JWT
             ResponseCookie cookie = ResponseCookie.from("jwt", jwtToken)

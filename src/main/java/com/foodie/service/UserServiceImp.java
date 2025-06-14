@@ -1,6 +1,7 @@
 package com.foodie.service;
 
 import com.foodie.Config.JwtProvider;
+import com.foodie.Config.JwtUtil;
 import com.foodie.dto.AddressDTO;
 import com.foodie.dto.IngredientDTO;
 import com.foodie.dto.MenuItemDTO;
@@ -50,6 +51,7 @@ public class UserServiceImp implements UserServices {
     private final JwtProvider jwtProvider;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final JwtUtil jwtUtil;
 
     @Override
     @Transactional
@@ -297,7 +299,7 @@ public class UserServiceImp implements UserServices {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "JWT is missing");
         }
 
-        String email = jwtProvider.extractEmail(jwt);
+        String email = jwtUtil.extractEmail(jwt);
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
     }
